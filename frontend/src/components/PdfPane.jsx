@@ -10,6 +10,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
  * so a single scale factor maps them onto the rendered canvas.
  */
 export default function PdfPane({ file, highlight, onReady }) {
+  const paneRef = useRef(null);
   const hostRef = useRef(null);
   const pageRefs = useRef([]);
   const [scale, setScale] = useState(1);
@@ -17,21 +18,34 @@ export default function PdfPane({ file, highlight, onReady }) {
 
   useEffect(() => {
     if (!file) return;
-    let cancelled = false;
 
-    (async () => {
+    let cancelled = false;
+    let renderSerial = 0;
+    let resizeTimer = 0;
+    let lastRenderWidth = 0;
+    const pane = paneRef.current;
+    const host = hostRef.current;
+
+    async function renderDocument() {
+      if (!host || !pane || cancelled) return;
+
+      const availableWidth = Math.max(1, host.clientWidth - 48);
+      const width = Math.min(760, availableWidth);
+      if (Math.abs(width - lastRenderWidth) < 1) return;
+      lastRenderWidth = width;
+
+      const serial = ++renderSerial;
+      const previousScrollTop = pane.scrollTop;
       setStatus("rendering");
-      const host = hostRef.current;
       host.innerHTML = "";
       pageRefs.current = [];
 
       try {
         const buf = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: buf, enableScripting: false }).promise;
-        const width = Math.min(760, Math.max(360, host.clientWidth - 72));
 
         for (let n = 1; n <= pdf.numPages; n++) {
-          if (cancelled) return;
+          if (cancelled || serial !== renderSerial) return;
           const page = await pdf.getPage(n);
           const base = page.getViewport({ scale: 1 });
           const s = width / base.width;
@@ -69,16 +83,33 @@ export default function PdfPane({ file, highlight, onReady }) {
             transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null
           }).promise;
         }
-        if (!cancelled) {
+
+        if (!cancelled && serial === renderSerial) {
+          pane.scrollTop = Math.min(previousScrollTop, Math.max(0, pane.scrollHeight - pane.clientHeight));
           setStatus("ready");
           onReady?.(pdf.numPages);
         }
       } catch (err) {
-        if (!cancelled) setStatus("failed");
+        if (!cancelled && serial === renderSerial) setStatus("failed");
       }
-    })();
+    }
 
-    return () => { cancelled = true; };
+    renderDocument();
+
+    const observer = new ResizeObserver(() => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => {
+        renderDocument();
+      }, 120);
+    });
+    observer.observe(pane);
+
+    return () => {
+      cancelled = true;
+      renderSerial += 1;
+      window.clearTimeout(resizeTimer);
+      observer.disconnect();
+    };
   }, [file, onReady]);
 
   // draw / move the evidence highlight
