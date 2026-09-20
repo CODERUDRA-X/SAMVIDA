@@ -140,7 +140,7 @@ export default function PdfPane({ file, highlight, onReady }) {
   }, [highlight, scale]);
 
   return (
-    <section className="docpane">
+    <section className="docpane" ref={paneRef}>
       <div className="docinner" ref={hostRef} />
       {status === "failed" && (
         <div className="pane-msg">
