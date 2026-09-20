@@ -204,8 +204,34 @@ export default function App() {
               <>
                 {busy && <ProcessingCard mode={busyMode} />}
                 {!run && !busy && !fatal && (
-                  <p className="rail-empty">Upload a contract to start the agent.</p>
-                )}
+  <div className="idle-state">
+    <div className="idle-state-head">
+      <span className="idle-state-kicker">SAMVIDA READY</span>
+      <span className="idle-state-status">
+        <i />
+        Awaiting document
+      </span>
+    </div>
+
+    <h4>Ready to turn a contract into an action plan.</h4>
+
+    <p>
+      Upload a digital business contract. SAMVIDA will analyse it autonomously,
+      ground important findings to source evidence, pause when human verification
+      is required, and build the resulting action timeline.
+    </p>
+
+    <div className="idle-flow">
+      <span><b>01</b> Parse</span>
+      <em />
+      <span><b>02</b> Extract</span>
+      <em />
+      <span><b>03</b> Evaluate</span>
+      <em />
+      <span><b>04</b> Ground</span>
+    </div>
+  </div>
+)}
                 {fatal && <ErrorCard>{fatal}</ErrorCard>}
                 {run?.error && <ErrorCard>{run.error}</ErrorCard>}
 

@@ -19,6 +19,35 @@ export function Timeline({ items, onOpen }) {
     railRef.current?.scrollBy({ left: amount, behavior: "smooth" });
   }
 
+  function handleRailWheel(e) {
+    // A normal mouse-wheel gesture is vertical; convert it to horizontal
+    // movement while the pointer is over the timeline so all 11+ items are
+    // reachable without requiring a trackpad or Shift+wheel.
+    const rail = railRef.current;
+    if (!rail || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    const max = rail.scrollWidth - rail.clientWidth;
+    if (max <= 0) return;
+    e.preventDefault();
+    rail.scrollLeft = Math.max(0, Math.min(max, rail.scrollLeft + e.deltaY));
+  }
+
+  function handleRailKeyDown(e) {
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      scrollRail(340);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      scrollRail(-340);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      railRef.current?.scrollTo({ left: 0, behavior: "smooth" });
+    } else if (e.key === "End") {
+      e.preventDefault();
+      const rail = railRef.current;
+      rail?.scrollTo({ left: rail.scrollWidth, behavior: "smooth" });
+    }
+  }
+
   return (
     <footer className="rail-wrap">
       <div className="railhead">
@@ -39,18 +68,8 @@ export function Timeline({ items, onOpen }) {
         ref={railRef}
         tabIndex={0}
         aria-label="Contract action timeline"
-        onWheel={(e) => {
-          if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-            e.currentTarget.scrollLeft += e.deltaY;
-            e.preventDefault();
-          }
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowRight") { e.currentTarget.scrollBy({ left: 300, behavior: "smooth" }); e.preventDefault(); }
-          if (e.key === "ArrowLeft") { e.currentTarget.scrollBy({ left: -300, behavior: "smooth" }); e.preventDefault(); }
-          if (e.key === "Home") { e.currentTarget.scrollTo({ left: 0, behavior: "smooth" }); e.preventDefault(); }
-          if (e.key === "End") { e.currentTarget.scrollTo({ left: e.currentTarget.scrollWidth, behavior: "smooth" }); e.preventDefault(); }
-        }}
+        onWheel={handleRailWheel}
+        onKeyDown={handleRailKeyDown}
       >
         {items.length === 0 && <p className="rail-empty">Confirmed and tracked findings appear here, separated from plain contract facts.</p>}
         {items.map((t) => (
@@ -73,7 +92,6 @@ export function Timeline({ items, onOpen }) {
               {!t.section && t.page && <span>page {t.page}</span>}
             </div>
             {t.mergedLabels?.length > 0 && <div className="tl-merged">Also covers: {t.mergedLabels.join(", ")}</div>}
-            <div className="tl-action">Open source ↗</div>
           </button>
         ))}
       </div>

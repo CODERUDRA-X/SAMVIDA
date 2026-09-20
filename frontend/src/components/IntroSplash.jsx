@@ -36,7 +36,9 @@ export default function IntroSplash({ onDone }) {
           <span />
         </div>
 
-        <div className="intro-name">SAMVIDA</div>
+        <div className="intro-wordmark" aria-label="SAMVIDA">
+          S<span className="brand-glyph">Λ</span>MVID<span className="brand-glyph">Λ</span>
+        </div>
         <div className="intro-line" aria-hidden="true" />
         <div className="intro-kicker">CONTRACT · EVIDENCE · CONTROL</div>
         <div className="intro-sub">Contract-to-Action Intelligence Agent</div>
