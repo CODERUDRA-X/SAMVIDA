@@ -14,7 +14,7 @@ load_dotenv()
 
 from . import config, extract  # noqa: E402
 from .graph import GRAPH  # noqa: E402
-from .pdf_parse import Document, parse_pdf  # noqa: E402
+from .pdf_parse import Document, full_text, ground_quote, parse_pdf  # noqa: E402
 
 app = FastAPI(title="SAMVIDA — Contract-to-Action Intelligence Agent", version="2.0")
 app.add_middleware(CORSMiddleware, allow_origins=[x.strip() for x in os.environ.get("CONTRACTLENS_ORIGINS", "http://localhost:5173").split(",") if x.strip()], allow_methods=["*"], allow_headers=["*"])
@@ -122,6 +122,14 @@ def ask(doc_id: str, body: Question) -> dict[str, Any]:
     if not doc_info:
         raise HTTPException(404, "Unknown document.")
     try:
-        return extract.answer_question(Document.from_pages(doc_info["pages"]), body.question.strip())
+        result = extract.answer_question(full_text(doc_info["pages"]), body.question.strip())
+        if result.get("quote"):
+            result["evidence"] = ground_quote(
+                doc_info["pages"],
+                result["quote"],
+                result.get("page"),
+            )
+            result["page"] = result["evidence"].get("page") or result.get("page")
+        return result
     except extract.ExtractionError as exc:
         raise HTTPException(502, str(exc)) from exc
