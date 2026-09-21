@@ -137,7 +137,7 @@ def _clean(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def extract_core_terms(text: str) -> dict[str, Any]:
+def extract_core_terms(text: str, doc: Document | None = None) -> dict[str, Any]:
     return _clean(
         _json_call(
             f"""You are reading a business contract for an operations team.
@@ -154,7 +154,7 @@ CONTRACT:
     )
 
 
-def extract_obligations(text: str) -> dict[str, Any]:
+def extract_obligations(text: str, doc: Document | None = None) -> dict[str, Any]:
     return _clean(
         _json_call(
             f"""You are reading a business contract for an operations team.
