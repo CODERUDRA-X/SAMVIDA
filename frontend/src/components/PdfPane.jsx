@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
@@ -6,15 +7,24 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
 /**
  * Renders the contract and draws the evidence rectangles the backend produced.
- * Rects arrive in PDF point space; PyMuPDF and pdf.js share a top-left origin,
- * so a single scale factor maps them onto the rendered canvas.
+ *
+ * The PDF is rendered into a detached staging container first and swapped into
+ * the visible pane only after all pages are ready. Resize handling listens to
+ * the browser window rather than the scrollable PDF pane, avoiding a resize
+ * feedback loop caused by the pane's own vertical scrollbar.
  */
 export default function PdfPane({ file, highlight, onReady }) {
   const paneRef = useRef(null);
   const hostRef = useRef(null);
   const pageRefs = useRef([]);
+  const onReadyRef = useRef(onReady);
+
   const [scale, setScale] = useState(1);
   const [status, setStatus] = useState("idle");
+
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
 
   useEffect(() => {
     if (!file) return;
@@ -23,33 +33,47 @@ export default function PdfPane({ file, highlight, onReady }) {
     let renderSerial = 0;
     let resizeTimer = 0;
     let lastRenderWidth = 0;
+
     const pane = paneRef.current;
     const host = hostRef.current;
 
-    async function renderDocument() {
+    async function renderDocument(force = false) {
       if (!host || !pane || cancelled) return;
 
-      const availableWidth = Math.max(1, host.clientWidth - 48);
+      // The pane itself is scrollable. Use its client width so the scrollbar
+      // does not create a width/resize feedback loop.
+      const availableWidth = Math.max(1, pane.clientWidth - 48);
       const width = Math.min(760, availableWidth);
-      if (Math.abs(width - lastRenderWidth) < 1) return;
+
+      if (!force && Math.abs(width - lastRenderWidth) < 1) return;
       lastRenderWidth = width;
 
       const serial = ++renderSerial;
       const previousScrollTop = pane.scrollTop;
+
       setStatus("rendering");
-      host.innerHTML = "";
-      pageRefs.current = [];
+
+      // Render into a detached staging host. The current document stays visible
+      // until the new document has finished rendering, so there is no blank flash.
+      const staging = document.createElement("div");
+      staging.className = "docinner";
+      staging.style.width = "100%";
+
+      const nextPageRefs = [];
 
       try {
         const buf = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: buf, enableScripting: false }).promise;
+        const pdf = await pdfjsLib.getDocument({
+          data: buf,
+          enableScripting: false
+        }).promise;
 
         for (let n = 1; n <= pdf.numPages; n++) {
           if (cancelled || serial !== renderSerial) return;
+
           const page = await pdf.getPage(n);
           const base = page.getViewport({ scale: 1 });
           const s = width / base.width;
-          if (n === 1) setScale(s);
           const vp = page.getViewport({ scale: s });
 
           const holder = document.createElement("div");
@@ -59,10 +83,12 @@ export default function PdfPane({ file, highlight, onReady }) {
 
           const canvas = document.createElement("canvas");
           const ratio = Math.min(2, window.devicePixelRatio || 1);
+
           canvas.width = Math.floor(vp.width * ratio);
           canvas.height = Math.floor(vp.height * ratio);
           canvas.style.width = `${vp.width}px`;
           canvas.style.height = `${vp.height}px`;
+
           holder.appendChild(canvas);
 
           const overlay = document.createElement("div");
@@ -74,8 +100,8 @@ export default function PdfPane({ file, highlight, onReady }) {
           tag.textContent = `p. ${n}`;
           holder.appendChild(tag);
 
-          host.appendChild(holder);
-          pageRefs.current[n] = { holder, overlay, scale: s };
+          staging.appendChild(holder);
+          nextPageRefs[n] = { holder, overlay, scale: s };
 
           await page.render({
             canvasContext: canvas.getContext("2d"),
@@ -84,40 +110,62 @@ export default function PdfPane({ file, highlight, onReady }) {
           }).promise;
         }
 
-        if (!cancelled && serial === renderSerial) {
-          pane.scrollTop = Math.min(previousScrollTop, Math.max(0, pane.scrollHeight - pane.clientHeight));
-          setStatus("ready");
-          onReady?.(pdf.numPages);
+        if (cancelled || serial !== renderSerial) return;
+
+        // Swap the complete rendered document into view in one operation.
+        host.replaceChildren(...Array.from(staging.childNodes));
+        pageRefs.current = nextPageRefs;
+
+        const firstPageScale = nextPageRefs[1]?.scale;
+        if (typeof firstPageScale === "number") {
+          setScale(firstPageScale);
         }
+
+        pane.scrollTop = Math.min(
+          previousScrollTop,
+          Math.max(0, pane.scrollHeight - pane.clientHeight)
+        );
+
+        setStatus("ready");
+        onReadyRef.current?.(pdf.numPages);
       } catch (err) {
-        if (!cancelled && serial === renderSerial) setStatus("failed");
+        if (!cancelled && serial === renderSerial) {
+          setStatus("failed");
+        }
       }
     }
 
-    renderDocument();
+    // One clean initial render.
+    renderDocument(true);
 
-    const observer = new ResizeObserver(() => {
+    // Browser resize includes normal window changes and browser zoom changes.
+    // We deliberately do not observe the scrollable pane itself.
+    const handleResize = () => {
       window.clearTimeout(resizeTimer);
       resizeTimer = window.setTimeout(() => {
         renderDocument();
-      }, 120);
-    });
-    observer.observe(pane);
+      }, 160);
+    };
+
+    window.addEventListener("resize", handleResize);
 
     return () => {
       cancelled = true;
       renderSerial += 1;
       window.clearTimeout(resizeTimer);
-      observer.disconnect();
+      window.removeEventListener("resize", handleResize);
     };
-  }, [file, onReady]);
+  }, [file]);
 
-  // draw / move the evidence highlight
+  // Draw / move the evidence highlight.
   useEffect(() => {
     pageRefs.current.forEach((p) => p && (p.overlay.innerHTML = ""));
+
     if (!highlight) return;
+
     const { page, rects, tier } = highlight;
     const target = pageRefs.current[page];
+
     if (!target) return;
 
     if (tier === 1 && rects?.length) {
@@ -130,12 +178,16 @@ export default function PdfPane({ file, highlight, onReady }) {
         box.style.height = `${(y1 - y0) * target.scale}px`;
         target.overlay.appendChild(box);
       });
+
       const first = target.overlay.firstChild;
       first?.scrollIntoView({ behavior: "smooth", block: "center" });
     } else {
       target.holder.classList.add("page-flash");
       target.holder.scrollIntoView({ behavior: "smooth", block: "start" });
-      setTimeout(() => target.holder.classList.remove("page-flash"), 1600);
+
+      window.setTimeout(() => {
+        target.holder.classList.remove("page-flash");
+      }, 1600);
     }
   }, [highlight, scale]);
 
@@ -145,7 +197,10 @@ export default function PdfPane({ file, highlight, onReady }) {
       {status === "failed" && (
         <div className="pane-msg">
           <h3>That PDF could not be rendered</h3>
-          <p>ContractLens reads text-based digital contracts. Scans and photographs are out of scope.</p>
+          <p>
+            ContractLens reads text-based digital contracts. Scans and photographs
+            are out of scope.
+          </p>
         </div>
       )}
     </section>
