@@ -15,7 +15,7 @@ from .pdf_parse import Document
 
 import requests
 
-MODEL = os.environ.get("CONTRACTLENS_MODEL", "gemini-2.0-flash")
+MODEL = os.environ.get("CONTRACTLENS_MODEL", "gemini-3.5-flash-lite")
 _ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 
