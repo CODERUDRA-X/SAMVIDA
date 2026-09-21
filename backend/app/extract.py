@@ -11,6 +11,7 @@ import json
 import os
 import re
 from typing import Any
+from .pdf_parse import Document
 
 import requests
 
